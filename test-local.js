@@ -1,7 +1,7 @@
 const fetch = globalThis.fetch;
 
 // Configs
-const RECIPIENT = 'holystool@gmail.com';
+const RECIPIENT = 'your-email@example.com';
 const WIKI_URL = 'https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e';
 
 // Cookie-tracking fetch helper

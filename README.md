@@ -3,7 +3,7 @@
 本项目实现了一套无本地依赖的自动化抓取和邮件推送系统。系统将部署在 **Google Apps Script (GAS)** 上，每天早晨自动抓取 **WayToAGI** 飞书知识库的“近7日更新日志”，若发现有新内容（日期为今天或昨天），则通过 Gmail 将精美的 HTML 日志推送到您的邮箱；若无更新，则推送“今日无更新”通知并附带主页链接。
 
 ## 核心配置信息
-- **接收邮箱**：`holystool@gmail.com`
+- **接收邮箱**：`your-email@example.com`（部署时需修改为您的实际邮箱）
 - **抓取目标**：[WayToAGI 知识库主页](https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e)
 - **推送频率**：每天早上 8:00 - 9:00（基于 GAS 每日定时器）
 
@@ -16,11 +16,12 @@
 2. 点击左上角的 **"新项目" (New Project)**。
 3. 将项目名称修改为 `WayToAGI Daily Push`（或您喜欢的任意名称）。
 
-### 第二步：导入核心代码
+### 第二步：导入核心代码与配置邮箱
 1. 在左侧文件列表中，双击默认创建的 `代码.gs` (或 `Code.gs`)。
 2. 清空编辑器中的所有默认代码。
 3. 打开本地文件 [gas-script.js](file:///Volumes/Lan/AppDev/My%20Build/waytoagi%20email%20push/gas-script.js)，复制其**全部内容**，粘贴到 GAS 的在线编辑器中。
-4. 按键盘快捷键 `Ctrl + S` (Windows) 或 `Cmd + S` (Mac) 保存代码。
+4. **修改邮箱配置**：在编辑器中找到 `gas-script.js` 开头的 `RECIPIENT` 常量定义（约第 10 行），将 `'your-email@example.com'` 修改为**您的实际接收邮箱**（如 Gmail 等）。
+5. 按键盘快捷键 `Ctrl + S` (Windows) 或 `Cmd + S` (Mac) 保存代码。
 
 ### 第三步：手动运行测试与授权
 在首次运行时，Google 会要求您授予脚本使用网络（`UrlFetchApp`）和发送邮件（`GmailApp`）的权限。
@@ -33,7 +34,7 @@
    - 点击 **"转到 WayToAGI Daily Push（安全）" / "Go to WayToAGI Daily Push (unsafe)"**。
 5. 在权限申请列表中，点击右下角的 **"允许" (Allow)**。
 6. 授权完成后，脚本会开始执行。您可以在下方的 **"执行日志" (Execution log)** 中看到每一步重定向和数据解析的进度。
-7. 运行结束后，打开您的 `holystool@gmail.com` 邮箱，确认是否收到了一封包含最新更新日志（或今日无更新提示）的邮件。
+7. 运行结束后，打开您刚刚配置的接收邮箱，确认是否收到了一封包含最新更新日志（或今日无更新提示）的邮件。
 
 ### 第四步：设置每日早上 8 点定时触发器
 GAS 支持设置基于时间的自动化定时任务，每天早晨会自动在 8:00 到 9:00 之间触发运行（GAS 定时器为了避开高并发采用随机化区间触发，通常会在 8:15 左右运行）。

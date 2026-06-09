@@ -7,7 +7,7 @@
  */
 
 // 全局配置项
-const RECIPIENT = 'holystool@gmail.com';
+const RECIPIENT = 'your-email@example.com'; // 请在此处配置您的收件人邮箱
 const WIKI_URL = 'https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e';
 const MAX_RETRIES = 3; // 失败时自动重试次数
 const RETRY_DELAY_MS = 5000; // 重试间隔时间
