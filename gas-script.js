@@ -182,7 +182,7 @@ function parseBulletBlock(block) {
 }
 
 /**
- * 定位“近7日更新日志”并提取最新一天的更新数据
+ * 定位“近7日更新日志”并提取最新两天的更新数据
  */
 function extractUpdateLogs(blockMap) {
   // 1. 定位标题块
@@ -213,13 +213,18 @@ function extractUpdateLogs(blockMap) {
   const siblings = parentBlock.data.children;
   const headingIdx = siblings.indexOf(logHeadingId);
 
-  // 2. 找到该标题后的第一个 heading3 块（即最新一天）
-  let latestDateBlockId = null;
+  // 2. 找到该标题后的前两个 heading3 块
+  const targetDateBlocks = [];
   for (let i = headingIdx + 1; i < siblings.length; i++) {
     const sib = blockMap[siblings[i]];
     if (sib && sib.data.type === 'heading3') {
-      latestDateBlockId = siblings[i];
-      break;
+      targetDateBlocks.push({
+        id: siblings[i],
+        block: sib
+      });
+      if (targetDateBlocks.length >= 2) {
+        break;
+      }
     }
     // 遇到其他的大标题或分割线，说明更新日志板块结束了
     if (sib && (sib.data.type === 'heading1' || sib.data.type === 'heading2' || sib.data.type === 'divider')) {
@@ -227,52 +232,44 @@ function extractUpdateLogs(blockMap) {
     }
   }
 
-  if (!latestDateBlockId) {
+  if (targetDateBlocks.length === 0) {
     throw new Error('在“近7日更新日志”版块下未找到任何日期节点');
   }
 
-  const dateBlock = blockMap[latestDateBlockId];
-  const rawDateText = getBlockText(dateBlock);
-  const cleanDateText = rawDateText.replace(/\s+/g, ''); // 例如 "6月8日"
-  Logger.log(`找到最新更新日志日期: "${rawDateText}" (清理后: "${cleanDateText}")`);
+  // 3. 提取各个日期节点下的列表项 (bullet)
+  const updates = [];
+  let hasUpdate = false;
 
-  // 3. 判断最新更新日期是否为今天或昨天
-  const now = new Date();
-  const todayStr = `${now.getMonth() + 1}月${now.getDate()}日`;
-  
-  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-  const yesterdayStr = `${yesterday.getMonth() + 1}月${yesterday.getDate()}日`;
-
-  Logger.log(`今天判断标准: "${todayStr}", 昨天判断标准: "${yesterdayStr}"`);
-
-  const hasUpdate = (cleanDateText === todayStr || cleanDateText === yesterdayStr);
-  
-  if (!hasUpdate) {
-    return {
-      hasUpdate: false,
-      date: cleanDateText,
-      items: []
-    };
-  }
-
-  // 4. 提取该日期节点下的所有子列表项 (bullet)
-  const items = [];
-  if (dateBlock.data.children) {
-    dateBlock.data.children.forEach(childId => {
-      const childBlock = blockMap[childId];
-      if (childBlock && childBlock.data.type === 'bullet') {
-        const parsed = parseBulletBlock(childBlock);
-        if (parsed) {
-          items.push(parsed);
+  targetDateBlocks.forEach(function(item) {
+    const rawDateText = getBlockText(item.block);
+    const cleanDateText = rawDateText.trim();
+    
+    const items = [];
+    if (item.block.data.children) {
+      item.block.data.children.forEach(function(childId) {
+        const childBlock = blockMap[childId];
+        if (childBlock && childBlock.data.type === 'bullet') {
+          const parsed = parseBulletBlock(childBlock);
+          if (parsed) {
+            items.push(parsed);
+          }
         }
-      }
+      });
+    }
+
+    if (items.length > 0) {
+      hasUpdate = true;
+    }
+
+    updates.push({
+      date: cleanDateText,
+      items: items
     });
-  }
+  });
 
   return {
-    hasUpdate: true,
-    date: cleanDateText,
-    items: items
+    hasUpdate: hasUpdate,
+    updates: updates
   };
 }
 
@@ -291,6 +288,7 @@ function renderEmailTemplate(logData) {
       .header { border-bottom: 2px solid #0070f3; padding-bottom: 12px; margin-bottom: 25px; }
       .title { font-size: 22px; color: #0070f3; margin: 0; font-weight: bold; }
       .subtitle { font-size: 13px; color: #777777; margin: 6px 0 0 0; }
+      .date-section { font-size: 16px; font-weight: bold; color: #0f172a; margin: 25px 0 12px 0; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; }
       .update-item { background: #f8fafc; border-left: 4px solid #0070f3; padding: 15px; margin-bottom: 18px; border-radius: 0 8px 8px 0; border-top: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; }
       .item-title { font-size: 16px; font-weight: bold; margin: 0 0 8px 0; color: #0f172a; }
       .item-title a { color: #0070f3; text-decoration: none; }
@@ -311,25 +309,33 @@ function renderEmailTemplate(logData) {
   `;
 
   if (!logData.hasUpdate) {
+    const dateNames = logData.updates.map(function(g) { return g.date; }).join(' & ');
     html += `
       <div class="no-update">
-        <div class="no-update-title">今日无更新</div>
-        <p style="color:#64748b; font-size:14px; margin-bottom: 22px;">知识库最新更新日期为：${logData.date}。过去 24 小时内未发现有新的更新日志发布。</p>
+        <div class="no-update-title">近期无更新</div>
+        <p style="color:#64748b; font-size:14px; margin-bottom: 22px;">知识库最近更新日期 (${dateNames}) 对应内容为空，或未发现有新的更新日志发布。</p>
         <a href="${WIKI_URL}" class="btn" target="_blank">访问 WayToAGI 主页</a>
       </div>
     `;
   } else {
     html += `
-      <p style="font-size:15px; font-weight:bold; color:#334155; margin-bottom:18px;">以下是最新一天的更新内容 (${logData.date})：</p>
+      <p style="font-size:15px; font-weight:bold; color:#334155; margin-bottom:18px;">以下是 Wiki 同步的最新的日志更新内容：</p>
     `;
-    logData.items.forEach(item => {
-      const linkHtml = item.link ? `<a href="${item.link}" target="_blank">${item.title}</a>` : item.title;
-      html += `
-        <div class="update-item">
-          <div class="item-title">${linkHtml}</div>
-          <div class="item-desc">${item.description}</div>
-        </div>
-      `;
+    logData.updates.forEach(function(group) {
+      if (group.items.length > 0) {
+        html += `
+          <div class="date-section">${group.date}</div>
+        `;
+        group.items.forEach(function(item) {
+          const linkHtml = item.link ? `<a href="${item.link}" target="_blank">${item.title}</a>` : item.title;
+          html += `
+            <div class="update-item">
+              <div class="item-title">${linkHtml}</div>
+              <div class="item-desc">${item.description}</div>
+            </div>
+          `;
+        });
+      }
     });
   }
 
@@ -363,14 +369,24 @@ function main() {
       Logger.log('文档树结构反序列化成功，正在定位更新日志块...');
 
       const logData = extractUpdateLogs(blockMap);
-      Logger.log(`内容提取完成。有无更新: ${logData.hasUpdate}, 最新更新日期: ${logData.date}, 更新项数量: ${logData.items.length}`);
+      Logger.log(`内容提取完成。有无更新: ${logData.hasUpdate}`);
+      logData.updates.forEach(function(g) {
+        Logger.log(`- 日期: ${g.date}, 更新项数量: ${g.items.length}`);
+      });
 
       const emailHtml = renderEmailTemplate(logData);
       
       // 发送邮件
-      const subject = logData.hasUpdate 
-        ? `WayToAGI 更新推送 [${logData.date}]` 
-        : `WayToAGI 今日无更新 [${logData.date}]`;
+      let subject = '';
+      if (logData.hasUpdate) {
+        const activeDates = logData.updates
+          .filter(function(g) { return g.items.length > 0; })
+          .map(function(g) { return g.date; });
+        subject = `WayToAGI 更新推送 [${activeDates.join(' & ')}]`;
+      } else {
+        const allDates = logData.updates.map(function(g) { return g.date; });
+        subject = `WayToAGI 近期无更新 [${allDates.join(' & ')}]`;
+      }
       
       Logger.log(`正在发送邮件到 ${RECIPIENT}...`);
       GmailApp.sendEmail(RECIPIENT, subject, "", {

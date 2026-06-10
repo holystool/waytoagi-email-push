@@ -139,7 +139,7 @@ function parseBulletBlock(block) {
   };
 }
 
-// Extract update logs
+// Extract update logs (Extract latest two dates)
 function extractUpdateLogs(blockMap) {
   console.log('Total blocks to search:', Object.keys(blockMap).length);
   // 1. Locate the "近7日更新日志" block
@@ -167,13 +167,18 @@ function extractUpdateLogs(blockMap) {
   const siblings = parentBlock.data.children;
   const headingIdx = siblings.indexOf(logHeadingId);
 
-  // 2. Find the first heading3 block after our heading2
-  let latestDateBlockId = null;
+  // 2. Find the first two heading3 blocks after our heading2
+  const targetDateBlocks = [];
   for (let i = headingIdx + 1; i < siblings.length; i++) {
     const sib = blockMap[siblings[i]];
     if (sib && sib.data.type === 'heading3') {
-      latestDateBlockId = siblings[i];
-      break;
+      targetDateBlocks.push({
+        id: siblings[i],
+        block: sib
+      });
+      if (targetDateBlocks.length >= 2) {
+        break;
+      }
     }
     // If we hit another heading1/heading2 or divider, we stop
     if (sib && (sib.data.type === 'heading1' || sib.data.type === 'heading2' || sib.data.type === 'divider')) {
@@ -181,52 +186,44 @@ function extractUpdateLogs(blockMap) {
     }
   }
 
-  if (!latestDateBlockId) {
+  if (targetDateBlocks.length === 0) {
     throw new Error('Failed to find any date blocks under the update log section');
   }
 
-  const dateBlock = blockMap[latestDateBlockId];
-  const rawDateText = getBlockText(dateBlock);
-  const cleanDateText = rawDateText.replace(/\s+/g, ''); // "6月8日"
-  console.log(`Latest date found in wiki: "${rawDateText}" (clean: "${cleanDateText}")`);
+  // 3. Extract items for each date block
+  const updates = [];
+  let hasUpdate = false;
 
-  // 3. Determine if the update is today or yesterday
-  const now = new Date();
-  const todayStr = `${now.getMonth() + 1}月${now.getDate()}日`;
-  
-  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-  const yesterdayStr = `${yesterday.getMonth() + 1}月${yesterday.getDate()}日`;
-
-  console.log(`Today's Date Key: "${todayStr}", Yesterday's Date Key: "${yesterdayStr}"`);
-
-  const hasUpdate = (cleanDateText === todayStr || cleanDateText === yesterdayStr);
-  
-  if (!hasUpdate) {
-    return {
-      hasUpdate: false,
-      date: cleanDateText,
-      items: []
-    };
-  }
-
-  // 4. Extract children bullet blocks
-  const items = [];
-  if (dateBlock.data.children) {
-    for (const childId of dateBlock.data.children) {
-      const childBlock = blockMap[childId];
-      if (childBlock && childBlock.data.type === 'bullet') {
-        const parsed = parseBulletBlock(childBlock);
-        if (parsed) {
-          items.push(parsed);
+  for (const item of targetDateBlocks) {
+    const rawDateText = getBlockText(item.block);
+    const cleanDateText = rawDateText.trim();
+    
+    const items = [];
+    if (item.block.data.children) {
+      for (const childId of item.block.data.children) {
+        const childBlock = blockMap[childId];
+        if (childBlock && childBlock.data.type === 'bullet') {
+          const parsed = parseBulletBlock(childBlock);
+          if (parsed) {
+            items.push(parsed);
+          }
         }
       }
     }
+
+    if (items.length > 0) {
+      hasUpdate = true;
+    }
+
+    updates.push({
+      date: cleanDateText,
+      items: items
+    });
   }
 
   return {
-    hasUpdate: true,
-    date: cleanDateText,
-    items: items
+    hasUpdate: hasUpdate,
+    updates: updates
   };
 }
 
@@ -242,6 +239,7 @@ function formatEmail(logData) {
       .header { border-bottom: 2px solid #0070f3; padding-bottom: 10px; margin-bottom: 20px; }
       .title { font-size: 20px; color: #0070f3; margin: 0; font-weight: bold; }
       .subtitle { font-size: 14px; color: #666666; margin: 5px 0 0 0; }
+      .date-section { font-size: 16px; font-weight: bold; color: #0070f3; margin: 20px 0 10px 0; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px; }
       .update-item { background: #f9f9f9; border-left: 4px solid #0070f3; padding: 15px; margin-bottom: 15px; border-radius: 0 8px 8px 0; }
       .item-title { font-size: 16px; font-weight: bold; margin: 0 0 8px 0; }
       .item-title a { color: #0070f3; text-decoration: none; }
@@ -261,25 +259,33 @@ function formatEmail(logData) {
   `;
 
   if (!logData.hasUpdate) {
+    const dateNames = logData.updates.map(g => g.date).join(' & ');
     html += `
       <div class="no-update">
-        <div class="no-update-title">今日无更新</div>
-        <p style="color:#666666; font-size:14px; margin-bottom: 20px;">最新一天的更新日期为：${logData.date}。过去24小时内未发现新的日志发布。</p>
+        <div class="no-update-title">近期无更新</div>
+        <p style="color:#666666; font-size:14px; margin-bottom: 20px;">最新日期 (${dateNames}) 未发现有新的日志发布。</p>
         <a href="${WIKI_URL}" class="btn" target="_blank">访问 WayToAGI 主页</a>
       </div>
     `;
   } else {
     html += `
-      <p style="font-size:15px; font-weight:bold; color:#555555; margin-bottom:15px;">以下是最新一天的更新内容 (${logData.date})：</p>
+      <p style="font-size:15px; font-weight:bold; color:#555555; margin-bottom:15px;">以下是 Wiki 同步的最新的日志更新内容：</p>
     `;
-    for (const item of logData.items) {
-      const linkHtml = item.link ? `<a href="${item.link}" target="_blank">${item.title}</a>` : item.title;
-      html += `
-        <div class="update-item">
-          <div class="item-title">${linkHtml}</div>
-          <div class="item-desc">${item.description}</div>
-        </div>
-      `;
+    for (const group of logData.updates) {
+      if (group.items.length > 0) {
+        html += `
+          <div class="date-section">${group.date}</div>
+        `;
+        for (const item of group.items) {
+          const linkHtml = item.link ? `<a href="${item.link}" target="_blank">${item.title}</a>` : item.title;
+          html += `
+            <div class="update-item">
+              <div class="item-title">${linkHtml}</div>
+              <div class="item-desc">${item.description}</div>
+            </div>
+          `;
+        }
+      }
     }
   }
 
@@ -305,7 +311,10 @@ async function run() {
     console.log('Block map parsed successfully! Extracting logs...');
     
     const logData = extractUpdateLogs(blockMap);
-    console.log(`Extraction complete! HasUpdate=${logData.hasUpdate}, Date=${logData.date}, Items Count=${logData.items.length}`);
+    console.log(`Extraction complete! HasUpdate=${logData.hasUpdate}`);
+    logData.updates.forEach(g => {
+      console.log(`- Date: ${g.date}, Items Count: ${g.items.length}`);
+    });
     
     const emailHtml = formatEmail(logData);
     console.log('Email formatted! Writing email preview to local file email-preview.html...');
